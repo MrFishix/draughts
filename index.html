@@ -262,6 +262,43 @@
     }
     .btn.primary { background: linear-gradient(180deg, #2f86ff, #1d63cc); border: none; }
     .btn.ghost { background: transparent; }
+
+    /* Новая мобильная адаптация панели управления */
+    .right { width: 100%; }
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(220px, 1fr));
+      gap: 10px 12px;
+      align-items: center;
+      width: 100%;
+    }
+    .field {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .field label { white-space: nowrap; }
+
+    /* Кнопка «Новая партия» на всю ширину */
+    .controls > .primary {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+    }
+
+    /* Планшеты/телефоны: 2 колонки */
+    @media (max-width: 860px) {
+      .controls { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+    }
+    /* Узкие телефоны: 1 колонка, метка над селектом */
+    @media (max-width: 480px) {
+      .controls { grid-template-columns: 1fr; }
+      .field { grid-template-columns: 1fr; }
+      .field label { margin-bottom: 4px; }
+    }
+    /* Комфортная зона касания */
+    select { min-height: 42px; }
   </style>
 </head>
 <body>
@@ -273,26 +310,35 @@
           <span class="badge" id="badge"><span class="dot"></span> Вы играете белыми</span>
         </div>
         <div class="right">
-          <label for="colorSel">Ваш цвет:</label>
-          <select id="colorSel">
-            <option value="W" selected>Белые</option>
-            <option value="B">Чёрные</option>
-          </select>
+          <div class="controls">
+            <div class="field">
+              <label for="colorSel">Ваш цвет</label>
+              <select id="colorSel">
+                <option value="W" selected>Белые</option>
+                <option value="B">Чёрные</option>
+              </select>
+            </div>
 
-          <label for="firstSel">Первый ход:</label>
-          <select id="firstSel">
-            <option value="player" selected>Игрок</option>
-            <option value="ai">Компьютер</option>
-          </select>
+            <div class="field">
+              <label for="firstSel">Первый ход</label>
+              <select id="firstSel">
+                <option value="player" selected>Игрок</option>
+                <option value="ai">Компьютер</option>
+              </select>
+            </div>
 
-          <label for="difficulty">Сложность:</label>
-          <select id="difficulty">
-            <option value="2">Лёгкая</option>
-            <option value="4" selected>Средняя</option>
-            <option value="8">Сложная</option>
-            <option value="pro">Профи (очень сложно)</option>
-          </select>
-          <button id="newGame" class="primary">Новая партия</button>
+            <div class="field">
+              <label for="difficulty">Сложность</label>
+              <select id="difficulty">
+                <option value="2">Лёгкая</option>
+                <option value="4" selected>Средняя</option>
+                <option value="8">Сложная</option>
+                <option value="pro">Профи (очень сложно)</option>
+              </select>
+            </div>
+
+            <button id="newGame" class="primary">Новая партия</button>
+          </div>
         </div>
       </div>
       <div class="info">Опции применяются при начале новой партии. «Профи» — итеративное углубление с кэшем позиций, увеличено время на ход для более сильной игры.</div>
