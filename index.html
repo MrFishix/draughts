@@ -67,8 +67,8 @@
       border-radius: 12px;
       cursor: pointer;
       outline: none;
-      font: inherit;
       touch-action: manipulation;
+      font: inherit;
     }
     button.primary { background: linear-gradient(180deg, #2f86ff, #1d63cc); border: none; }
     button:disabled { opacity: 0.65; cursor: default; }
@@ -119,10 +119,10 @@
       display: grid;
       place-items: center;
       box-shadow: inset 0 3px 8px rgba(0,0,0,0.6), 0 8px 16px rgba(0,0,0,0.35);
-      transition: transform .1s ease, outline-color .12s ease;
-      cursor: pointer;
+      transition: transform .1s ease, outline-color .12s ease, box-shadow .12s ease;
+      cursor: grab;
       outline: 0 solid rgba(58,162,255,0.0);
-      touch-action: manipulation;
+      touch-action: none; /* важно для перетаскивания на тач-экранах */
     }
     .piece.white {
       background: radial-gradient(circle at 35% 30%, #ffffff, #d7d7d7 65%, #bdbdbd);
@@ -176,6 +176,23 @@
       filter: drop-shadow(0 2px 2px rgba(0,0,0,0.8));
     }
 
+    /* Визуал для перетаскивания */
+    .piece.dragging {
+      cursor: grabbing;
+      transition: none !important;
+      z-index: 1000;
+      outline-width: 3px;
+      outline-color: rgba(58,162,255,0.9);
+      box-shadow: inset 0 3px 8px rgba(0,0,0,0.6), 0 12px 24px rgba(0,0,0,0.55);
+      pointer-events: none; /* пропускаем события к клеткам под фигурой */
+    }
+    .drag-dest { /* метки целей, созданные во время перетаскивания */
+      pointer-events: none;
+    }
+    .drag-cap {
+      position: relative;
+    }
+
     .sidebar {
       min-width: 260px;
       background: var(--panel);
@@ -196,6 +213,19 @@
     }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #2f86ff; display: inline-block; }
     .footer { text-align: center; color: var(--muted); font-size: 12px; }
+
+    /* Блок счёта */
+    .score {
+      display: grid;
+      gap: 6px;
+      margin-top: 4px;
+      padding-top: 6px;
+      border-top: 1px dashed #2b3847;
+    }
+    .score .line {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .score strong { font-weight: 700; }
 
     @media (max-width: 860px) {
       .board-wrap { grid-template-columns: 1fr; }
@@ -351,6 +381,14 @@
       <div class="sidebar">
         <div class="status" id="status">Ваш ход.</div>
         <div class="note">Правила: русские шашки — обратные взятия для простых, «летающие» дамки, принудительное взятие (максимум), немедленная коронация с продолжением рубки.</div>
+
+        <div class="score">
+          <div class="line">
+            <div>Счёт (вы):</div>
+            <div><strong id="scWins">0</strong> — <strong id="scLosses">0</strong></div>
+          </div>
+          <button id="resetScore" class="btn">Сбросить счёт</button>
+        </div>
       </div>
     </div>
 
@@ -388,7 +426,8 @@
       mode: 'depth',        // 'depth' | 'pro'
       proTimeMs: 3500,      // Профи+: ~3.5с на ход
       aiThinking: false,
-      gameOver: false
+      gameOver: false,
+      drag: null            // состояние перетаскивания
     };
 
     // DOM
@@ -407,6 +446,38 @@
     const endDot = document.getElementById('endDot');
     const playAgainBtn = document.getElementById('playAgainBtn');
     const closeModalBtn = document.getElementById('closeModalBtn');
+
+    // Score DOM
+    const scWinsEl = document.getElementById('scWins');
+    const scLossesEl = document.getElementById('scLosses');
+    const resetScoreBtn = document.getElementById('resetScore');
+
+    // Счёт (локально хранится)
+    const score = { wins: 0, losses: 0 };
+
+    function loadScore() {
+      try {
+        const s = JSON.parse(localStorage.getItem('rusCheckersScore') || '{}');
+        score.wins = Number.isFinite(s?.wins) ? s.wins : 0;
+        score.losses = Number.isFinite(s?.losses) ? s.losses : 0;
+      } catch {}
+      updateScoreUI();
+    }
+    function saveScore() {
+      localStorage.setItem('rusCheckersScore', JSON.stringify(score));
+    }
+    function updateScoreUI() {
+      scWinsEl.textContent = score.wins;
+      scLossesEl.textContent = score.losses;
+    }
+    function incScore(kind) {
+      if (kind === 'win') score.wins++;
+      else if (kind === 'lose') score.losses++;
+      saveScore(); updateScoreUI();
+    }
+    resetScoreBtn.addEventListener('click', () => {
+      score.wins = 0; score.losses = 0; saveScore(); updateScoreUI();
+    });
 
     function updateBadge() {
       badge.innerHTML = `<span class="dot"></span> Вы играете ${humanColor===W?'белыми':'чёрными'}`;
@@ -466,6 +537,7 @@
     const pieceColor = (v) => v === EMPTY ? 0 : (v > 0 ? W : B);
     const isKing = (v) => Math.abs(v) === 2;
     const isDark = (r,c) => (r+c)%2===1;
+    const getSqEl = (r,c) => grid.querySelector(`.sq[data-r="${r}"][data-c="${c}"]`);
 
     // Стартовая позиция: чёрные сверху, белые снизу
     function newBoard() {
@@ -485,6 +557,7 @@
       state.selected = null;
       state.gameOver = false;
       state.aiThinking = false;
+      state.drag = null;
 
       const whoFirst = firstSel.value; // 'player' | 'ai'
       state.turn = (whoFirst === 'player') ? humanColor : aiColor;
@@ -954,7 +1027,13 @@
             const key = `${r},${c}`;
             if (state.turn === humanColor && starts.has(key) && pieceColor(v)===humanColor) p.classList.add('hint');
             if (selectedKey === key) p.classList.add('selected');
+
+            // Клик-игра (оставляем)
             p.addEventListener('click', (e) => { e.stopPropagation(); onSquareClick(r,c); }, { passive: true });
+
+            // Перетаскивание
+            p.addEventListener('pointerdown', (e) => onPiecePointerDown(e, r, c, p));
+
             sq.appendChild(p);
           }
 
@@ -992,7 +1071,10 @@
         m.to[0] === r && m.to[1] === c
       );
       if (!move) return;
+      doHumanMove(move);
+    }
 
+    function doHumanMove(move) {
       state.board = applyMove(state.board, move);
       state.selected = null;
 
@@ -1001,6 +1083,7 @@
         state.gameOver = true;
         setStatus('Вы выиграли! У соперника нет ходов.');
         render();
+        incScore('win');
         showEndModal('win');
         return;
       }
@@ -1010,6 +1093,105 @@
       setStatus();
       render();
       setTimeout(aiTurn, 60);
+    }
+
+    // Перетаскивание
+    function onPiecePointerDown(e, r, c, pieceEl) {
+      if (state.gameOver || state.aiThinking) return;
+      if (state.turn !== humanColor) return;
+      const v = state.board[r][c];
+      if (v === EMPTY || pieceColor(v) !== humanColor) return;
+
+      // есть ли вообще ходы у этой фигуры
+      const movesFrom = state.legalMoves.filter(m => m.from[0] === r && m.from[1] === c);
+      if (movesFrom.length === 0) return;
+
+      e.preventDefault();
+
+      // Готовим карту целей
+      const destMap = new Map();
+      for (const m of movesFrom) destMap.set(m.to.join(','), m);
+
+      // Создаём визуальные метки целей и (опц.) взятий
+      const overlayDots = [];
+      const capSet = new Set();
+      for (const m of movesFrom) m.captures.forEach(([cr,cc]) => capSet.add(`${cr},${cc}`));
+      const capSquares = [];
+      for (const key of destMap.keys()) {
+        const [tr,tc] = key.split(',').map(n=>+n);
+        const sq = getSqEl(tr,tc);
+        if (!sq) continue;
+        const dot = document.createElement('div');
+        dot.className = 'dest drag-dest';
+        sq.appendChild(dot);
+        overlayDots.push(dot);
+      }
+      for (const capKey of capSet) {
+        const [cr,cc] = capKey.split(',').map(n=>+n);
+        const csq = getSqEl(cr,cc);
+        if (csq) {
+          csq.classList.add('capture-mark','drag-cap');
+          capSquares.push(csq);
+        }
+      }
+
+      pieceEl.classList.add('dragging');
+      pieceEl.style.transform = 'translate3d(0,0,0)';
+      pieceEl.setPointerCapture(e.pointerId);
+
+      const start = { x: e.clientX, y: e.clientY };
+      const drag = {
+        from: [r,c],
+        el: pieceEl,
+        pointerId: e.pointerId,
+        startX: start.x,
+        startY: start.y,
+        dx: 0, dy: 0,
+        destMap,
+        overlayDots,
+        capSquares
+      };
+      state.drag = drag;
+
+      const onMove = (ev) => {
+        if (!state.drag) return;
+        drag.dx = ev.clientX - drag.startX;
+        drag.dy = ev.clientY - drag.startY;
+        drag.el.style.transform = `translate3d(${drag.dx}px, ${drag.dy}px, 0)`;
+      };
+      const onUp = (ev) => {
+        if (!state.drag) return;
+        cleanupDragListeners();
+        // Определяем на какую клетку бросили
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        const sq = el && el.closest ? el.closest('.sq') : null;
+        let move = null;
+        if (sq && sq.dataset && sq.dataset.r != null) {
+          const key = `${+sq.dataset.r},${+sq.dataset.c}`;
+          move = drag.destMap.get(key) || null;
+        }
+
+        // Очистка визуала
+        for (const d of drag.overlayDots) d.remove();
+        for (const s of drag.capSquares) s.classList.remove('drag-cap','capture-mark');
+        drag.el.classList.remove('dragging');
+        drag.el.style.transform = '';
+
+        state.drag = null;
+
+        if (move) {
+          doHumanMove(move);
+        }
+      };
+      const cleanupDragListeners = () => {
+        pieceEl.releasePointerCapture(drag.pointerId);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     }
 
     function aiTurn() {
@@ -1030,6 +1212,7 @@
           setStatus('Вы выиграли! У соперника нет ходов.');
           state.aiThinking = false;
           render();
+          incScore('win');
           showEndModal('win');
           return;
         }
@@ -1041,6 +1224,7 @@
           setStatus('Компьютер победил. У вас нет ходов.');
           state.aiThinking = false;
           render();
+          incScore('lose');
           showEndModal('lose');
           return;
         }
@@ -1054,6 +1238,7 @@
     }
 
     // Старт
+    loadScore();
     updateBadge();
     newGame();
   </script>
