@@ -329,6 +329,17 @@
     }
     /* Комфортная зона касания */
     select { min-height: 42px; }
+    /* Отключаем выделение текста и системный callout при долгом тапе на доске */
+    .board, .grid, .sq, .piece, .coords {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none; /* iOS Safari: убрать меню по долгому тапу */
+    }
+
+    /* Фигуру уже тянем pointer-ами, оставим */
+    .piece {
+      touch-action: none; /* уже есть в вашем коде, важно для drag на тач-устройствах */
+    }
   </style>
 </head>
 <body>
@@ -408,6 +419,7 @@
   </div>
 
   <script>
+
     // Константы
     const SIZE = 8;
     const EMPTY = 0, W = 1, WK = 2, B = -1, BK = -2;
@@ -438,6 +450,10 @@
     const colorSel = document.getElementById('colorSel');
     const firstSel = document.getElementById('firstSel');
     const badge = document.getElementById('badge');
+    // На мобильных — предотвращаем контекстное меню/выделение по долгому тапу в зоне доски
+    grid.addEventListener('contextmenu', (e) => e.preventDefault());
+    // Иногда браузеры инициируют selectstart — тоже блокируем в зоне доски
+    grid.addEventListener('selectstart', (e) => e.preventDefault());
 
     // Modal DOM
     const endModal = document.getElementById('endModal');
@@ -1244,3 +1260,5 @@
   </script>
 </body>
 </html>
+
+
